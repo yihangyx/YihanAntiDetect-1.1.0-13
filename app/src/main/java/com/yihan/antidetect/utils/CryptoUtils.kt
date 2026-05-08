@@ -65,17 +65,15 @@ object CryptoUtils {
             val tag = Base64.decode(tagBase64, Base64.NO_WRAP)
             val ciphertext = Base64.decode(dataBase64, Base64.NO_WRAP)
             
-            // Combine ciphertext + tag for Java GCM (tag must be at the end)
-            val combined = ByteArray(ciphertext.size + tag.size)
-            System.arraycopy(ciphertext, 0, combined, 0, ciphertext.size)
-            System.arraycopy(tag, 0, combined, ciphertext.size, tag.size)
-            
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             val keySpec = SecretKeySpec(encryptionKey, "AES")
             val gcmSpec = GCMParameterSpec(128, iv)
             cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec)
             
-            val decrypted = cipher.doFinal(combined)
+            // Set auth tag separately (NOT appended to ciphertext)
+            cipher.setAuthTag(tag)
+            
+            val decrypted = cipher.doFinal(ciphertext)
             String(decrypted, Charsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
