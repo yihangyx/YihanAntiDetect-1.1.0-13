@@ -60,12 +60,11 @@ object ApiClient {
             
             // Decrypt the response (all responses are encrypted)
             val decryptedJson = CryptoUtils.decryptResponse(responseBody)
-            
+
             if (decryptedJson != null) {
                 parseAuthResponse(decryptedJson)
             } else {
                 AuthResult(success = false, message = "服务器响应错误: $responseCode")
-            }
             }
         } catch (e: Exception) {
             e.printStackTrace()
