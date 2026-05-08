@@ -1,4 +1,4 @@
-﻿package com.yihan.antidetect.utils
+package com.yihan.antidetect.utils
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -7,7 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * API client for authentication
+ * API client for authentication with request signing and response encryption
  */
 object ApiClient {
     
@@ -16,36 +16,55 @@ object ApiClient {
     
     /**
      * Verify key code with the server
+     * Now includes request signing and response decryption
      */
     suspend fun verifyKeyCode(keyCode: String): AuthResult = withContext(Dispatchers.IO) {
         try {
             val url = URL("https://$AUTH_SERVER$AUTH_PATH")
             val connection = url.openConnection() as HttpURLConnection
             
+            // Build request payload
+            val payload = JSONObject().apply {
+                put("key_code", keyCode)
+                put("machine_code", CryptoUtils.generateMachineCode())
+            }
+            val payloadString = payload.toString()
+            
+            // Generate signature
+            val signature = CryptoUtils.signPayload(payloadString)
+            
+            // Generate device fingerprint
+            val fingerprint = CryptoUtils.generateDeviceFingerprint()
+            
             connection.requestMethod = "POST"
             connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("X-API-Signature", signature)
+            connection.setRequestProperty("X-Device-Fingerprint", fingerprint)
             connection.connectTimeout = 10000
             connection.readTimeout = 15000
             connection.doOutput = true
             
-            val payload = JSONObject().apply {
-                put("key_code", keyCode)
-            }
-            
             connection.outputStream.use { os ->
-                val input = payload.toString().toByteArray(Charsets.UTF_8)
+                val input = payloadString.toByteArray(Charsets.UTF_8)
                 os.write(input, 0, input.size)
             }
             
             val responseCode = connection.responseCode
             
             if (responseCode == HttpURLConnection.HTTP_OK) {
-                val response = connection.inputStream.bufferedReader().readText()
-                parseAuthResponse(response)
+                val encryptedResponse = connection.inputStream.bufferedReader().readText()
+                
+                // Decrypt the response
+                val decryptedJson = CryptoUtils.decryptResponse(encryptedResponse)
+                    ?: return@withContext AuthResult(success = false, message = "响应解密失败")
+                
+                parseAuthResponse(decryptedJson)
             } else {
-                AuthResult(success = false, message = "服务器响应错误: $responseCode")
+                val errorStream = connection.errorStream?.bufferedReader()?.readText()
+                AuthResult(success = false, message = "服务器响应错误: $responseCode${errorStream?.let { " - $it" } ?: ""}")
             }
         } catch (e: Exception) {
+            e.printStackTrace()
             AuthResult(success = false, message = "连接失败: ${e.message}")
         }
     }
@@ -74,19 +93,29 @@ object ApiClient {
     
     /**
      * Fetch announcement from server
+     * Now includes response decryption
      */
     suspend fun fetchAnnouncement(): String? = withContext(Dispatchers.IO) {
         try {
             val url = URL("https://$AUTH_SERVER/api/announcement")
             val connection = url.openConnection() as HttpURLConnection
             
+            // Generate device fingerprint for announcement API too
+            val fingerprint = CryptoUtils.generateDeviceFingerprint()
+            
             connection.requestMethod = "GET"
+            connection.setRequestProperty("X-Device-Fingerprint", fingerprint)
             connection.connectTimeout = 5000
             connection.readTimeout = 10000
             
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val response = connection.inputStream.bufferedReader().readText()
-                val json = JSONObject(response)
+                val encryptedResponse = connection.inputStream.bufferedReader().readText()
+                
+                // Decrypt the response
+                val decryptedJson = CryptoUtils.decryptResponse(encryptedResponse)
+                    ?: return@withContext null
+                
+                val json = JSONObject(decryptedJson)
                 // API 返回格式: {"success": true, "data": [{"content": "..."}]}
                 val dataArray = json.optJSONArray("data")
                 var content: String? = null
@@ -104,6 +133,7 @@ object ApiClient {
                 null
             }
         } catch (e: Exception) {
+            e.printStackTrace()
             null
         }
     }
