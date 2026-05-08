@@ -70,10 +70,12 @@ object CryptoUtils {
             val gcmSpec = GCMParameterSpec(128, iv)
             cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec)
             
-            // Set auth tag separately (NOT appended to ciphertext)
-            cipher.setAuthTag(tag)
+            // Java AES/GCM: prepend auth tag to ciphertext; GCM extracts tagLen bits from front
+            val combined = ByteArray(tag.size + ciphertext.size)
+            System.arraycopy(tag, 0, combined, 0, tag.size)
+            System.arraycopy(ciphertext, 0, combined, tag.size, ciphertext.size)
             
-            val decrypted = cipher.doFinal(ciphertext)
+            val decrypted = cipher.doFinal(combined)
             String(decrypted, Charsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
