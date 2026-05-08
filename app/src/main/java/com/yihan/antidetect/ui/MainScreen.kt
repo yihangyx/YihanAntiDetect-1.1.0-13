@@ -82,7 +82,7 @@ fun MainScreen(
                     titleContentColor = TextPrimary
                 ),
                 actions = {
-                    IconButton(onClick = { viewModel.refreshDeviceInfo() }) {
+                    IconButton(onClick = { viewModel.refreshDeviceInfo(); viewModel.fetchAnnouncement() }) {
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription = "刷新",
@@ -123,8 +123,22 @@ fun MainScreen(
                             Text(
                                 text,
                                 fontSize = 13.sp,
-                                color = Purple
+                                color = Purple,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            IconButton(
+                                onClick = { viewModel.fetchAnnouncement() },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "刷新公告",
+                                    tint = Purple.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
