@@ -1,0 +1,84 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+    
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+    
+    - name: Build Release APK (Unsigned)
+      run: ./gradlew assembleRelease
+    
+    - name: Find APK files
+      run: |
+        echo "Debug APK:"
+        ls -la app/build/outputs/apk/debug/
+        echo "Release APK:"
+        ls -la app/build/outputs/apk/release/
+    
+    - name: Rename Release APK
+      run: |
+        if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+          mv app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release.apk
+        fi
+    
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/app-debug.apk
+    
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: app/build/outputs/apk/release/app-release.apk
+    
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.1.0-${{ github.run_number }}
+        name: Release v1.1.0 Build ${{ github.run_number }}
+        files: |
+          app/build/outputs/apk/debug/app-debug.apk
+          app/build/outputs/apk/release/app-release.apk
+        body: |
+          ## YH v1.1.0
+          
+          ### 功能
+          - 一键伪装设备信息
+          - 运行时伪装（无需重启）
+          - 设备状态查看
+          - 云手机/模拟器特征清理
+          
+          ### 下载
+          - `app-debug.apk` - 调试版本
+          - `app-release.apk` - 发布版本（已混淆优化）
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
