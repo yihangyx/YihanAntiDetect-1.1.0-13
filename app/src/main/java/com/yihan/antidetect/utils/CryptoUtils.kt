@@ -40,24 +40,42 @@ object CryptoUtils {
     }
     
     /**
-     * Decrypt AES-256-GCM encrypted response
-     * @param encryptedData Base64 encoded encrypted data (iv + ciphertext + authTag)
-     * @return Decrypted JSON string
+     * Decrypt AES-256-GCM encrypted response from server
+     * Server returns: {"v": 1, "enc": {"iv": "base64", "tag": "base64", "data": "base64"}}
+     * @param jsonResponse Raw JSON response body from server
+     * @return Decrypted plaintext string, or null on failure
      */
-    fun decryptResponse(encryptedData: String): String? {
+    fun decryptResponse(jsonResponse: String): String? {
         return try {
-            val combined = Base64.decode(encryptedData, Base64.NO_WRAP)
+            val json = JSONObject(jsonResponse)
             
-            // Extract IV (12 bytes), ciphertext, and auth tag (16 bytes)
-            val iv = combined.copyOfRange(0, 12)
-            val ciphertext = combined.copyOfRange(12, combined.size)
+            // Check protocol version
+            val version = json.optInt("v", 0)
+            if (version != 1) {
+                android.util.Log.w("CryptoUtils", "Unknown protocol version: $version")
+                return null
+            }
+            
+            val enc = json.getJSONObject("enc")
+            val ivBase64 = enc.getString("iv")
+            val tagBase64 = enc.getString("tag")
+            val dataBase64 = enc.getString("data")
+            
+            val iv = Base64.decode(ivBase64, Base64.NO_WRAP)
+            val tag = Base64.decode(tagBase64, Base64.NO_WRAP)
+            val ciphertext = Base64.decode(dataBase64, Base64.NO_WRAP)
+            
+            // Combine ciphertext + tag for Java GCM (tag must be at the end)
+            val combined = ByteArray(ciphertext.size + tag.size)
+            System.arraycopy(ciphertext, 0, combined, 0, ciphertext.size)
+            System.arraycopy(tag, 0, combined, ciphertext.size, tag.size)
             
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             val keySpec = SecretKeySpec(encryptionKey, "AES")
             val gcmSpec = GCMParameterSpec(128, iv)
             cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec)
             
-            val decrypted = cipher.doFinal(ciphertext)
+            val decrypted = cipher.doFinal(combined)
             String(decrypted, Charsets.UTF_8)
         } catch (e: Exception) {
             e.printStackTrace()
