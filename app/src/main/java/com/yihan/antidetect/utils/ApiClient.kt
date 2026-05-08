@@ -51,17 +51,21 @@ object ApiClient {
             
             val responseCode = connection.responseCode
             
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                val encryptedResponse = connection.inputStream.bufferedReader().readText()
-                
-                // Decrypt the response
-                val decryptedJson = CryptoUtils.decryptResponse(encryptedResponse)
-                    ?: return@withContext AuthResult(success = false, message = "响应解密失败")
-                
+            // Read response body (success or error — server always returns encrypted payload)
+            val responseBody = if (responseCode in 200..299) {
+                connection.inputStream.bufferedReader().readText()
+            } else {
+                connection.errorStream?.bufferedReader()?.readText() ?: ""
+            }
+            
+            // Decrypt the response (all responses are encrypted)
+            val decryptedJson = CryptoUtils.decryptResponse(responseBody)
+            
+            if (decryptedJson != null) {
                 parseAuthResponse(decryptedJson)
             } else {
-                val errorStream = connection.errorStream?.bufferedReader()?.readText()
-                AuthResult(success = false, message = "服务器响应错误: $responseCode${errorStream?.let { " - $it" } ?: ""}")
+                AuthResult(success = false, message = "服务器响应错误: $responseCode")
+            }
             }
         } catch (e: Exception) {
             e.printStackTrace()
